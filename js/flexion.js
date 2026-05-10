@@ -1552,7 +1552,7 @@ function fRenderSegs() {
         <span style="color:var(--txt3)">${IxLabel}</span><span style="color:var(--acc)">${Ix_cm4} cm⁴</span>
         <span style="color:var(--txt3)">Iy =</span><span style="color:var(--txt2)">${Iy_cm4} cm⁴</span>
         <span style="color:var(--txt3)">A =</span><span style="color:var(--txt2)">${A_cm2} cm²</span>
-        <span style="color:var(--txt3)">ȳ (centroide) =</span><span style="color:var(--txt2)">${yc_cm} cm</span>
+        <span style="color:var(--txt3)">ȳ (desde filo inf.) =</span><span style="color:var(--txt2)">${yc_cm} cm</span>
         <span style="color:var(--txt3)">c (fibra ext.) =</span><span style="color:var(--orange)">${c_cm} cm</span>
       </div>
     </div>`;
@@ -1945,14 +1945,14 @@ function fRenderLoads() {
         onchange="fSetLoad(${l.id},'${field}',fForceToSI(this.value))"></div>`;
     let body = '';
     if (l.tipo==='pun') {
-      body=`<div class="r2">${xInp('x',l.x||0)}${fInp('val',l.val||0,'P ('+fForceLabel()+') \u2193+')}</div>`;
+      body=`<div class="r2">${xInp('x',l.x||0)}${fInp('val',l.val||0,'P ('+fForceLabel()+') \u2191+')}</div>`;
     } else if (l.tipo==='mom') {
       body=`<div class="r2">${xInp('x',l.x||0)}${mInp('val',l.val||0,'M ('+fMomentLabel()+') ↺+')}</div>`;
     } else if (l.tipo==='dis') {
-      body=`<div class="r3">${xaInp(l.xa||0)}${xbInp(l.xb||0)}${fInp('val',l.val||0,'q\u2080 ('+fFpLLabel()+') \u2193+')}</div>`;
+      body=`<div class="r3">${xaInp(l.xa||0)}${xbInp(l.xb||0)}${fInp('val',l.val||0,'q\u2080 ('+fFpLLabel()+') \u2191+')}</div>`;
     } else if (l.tipo==='tri') {
       body=`<div class="r2">${xaInp(l.xa||0)}${xbInp(l.xb||0)}</div>
-      <div class="r2">${fInp('va',l.va||0,'q(x inicio) ('+fFpLLabel()+') \u2193+')}${fInp('vb',l.vb||0,'q(x fin) ('+fFpLLabel()+') \u2193+')}</div>`;
+      <div class="r2">${fInp('va',l.va||0,'q(x inicio) ('+fFpLLabel()+') \u2191+')}${fInp('vb',l.vb||0,'q(x fin) ('+fFpLLabel()+') \u2191+')}</div>`;
     } else if (l.tipo==='temp') {
       const dT = (+l.T_sup||0) - (+l.T_inf||0);
       const dTlbl = dT > 0 ? '\u2192 \u2193 sagging (sup. caliente)' : dT < 0 ? '\u2192 \u2191 hogging (inf. caliente)' : '\u2192 sin gradiente';
@@ -2496,7 +2496,7 @@ function fSolve() {
         document.getElementById('fCompPanel').style.display = '';
         document.getElementById('fCompPanel').innerHTML =
           `<div class="bgrid"><div class="ic" style="grid-column:1/-1">
-             <p class="it">σ por capa &nbsp;·&nbsp; M en x=${(MMaxIdx*le).toFixed(3)} m = ${fMomentFromSI(M_max).toFixed(3)} ${fMomentLabel()} &nbsp;·&nbsp; Ȳ = ${(yc_global*100).toFixed(2)} cm${nLabel}</p>
+             <p class="it">σ por capa &nbsp;·&nbsp; M en x=${(MMaxIdx*le).toFixed(3)} m = ${fMomentFromSI(M_max).toFixed(3)} ${fMomentLabel()} &nbsp;·&nbsp; Ȳ = ${(cp.yc*100).toFixed(2)} cm (filo inf.)${nLabel}</p>
              ${rowsHTML}
            </div></div>`;
       }
@@ -3637,7 +3637,7 @@ function drawFlexSection(xPos) {
   ctx.lineTo(Math.min(cx + secW/2 + 10, zW - 4), yc_px);
   ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle='rgba(245,200,66,0.75)'; ctx.font='9px DM Mono,monospace'; ctx.textAlign='center';
-  ctx.fillText('ȳ='+(props.yc*100).toFixed(2)+'cm', cx, yc_px - 5);
+  ctx.fillText('ȳ='+(props.yc*100).toFixed(2)+'cm (filo inf.)', cx, yc_px - 5);
 
   // ── σ(y) zone (zone 1) ────────────────────────────────────────
   const c_top = H_tot - props.yc;
