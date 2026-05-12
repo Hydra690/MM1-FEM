@@ -2475,8 +2475,8 @@ function fSolve() {
           const y_b  = yc_lay - dims.h / 2;
           const y_t  = yc_lay + dims.h / 2;
           // σ_i = n · (N/A_tr + M·(y−ȳ)/I_tr)
-          const sb   = fStressFromSI(n * (sigma_N_tr + M_max * (y_b - yc_global) / I_tr));
-          const st   = fStressFromSI(n * (sigma_N_tr + M_max * (y_t - yc_global) / I_tr));
+          const sb   = fStressFromSI(n * (sigma_N_tr - M_max * (y_b - yc_global) / I_tr));
+          const st   = fStressFromSI(n * (sigma_N_tr - M_max * (y_t - yc_global) / I_tr));
           const col  = layerColors[li % layerColors.length];
           const typeLbl = {rect:'Rect',circ:'Circ',Isym:'I',Tsec:'T↑',Tinv:'T↓'}[lay.type]||lay.type;
           return `<div class="ir">
@@ -2524,8 +2524,8 @@ function fSolve() {
     else                                               H_total_ni = s.h||0.10;
     const c_top_ni = H_total_ni - props_ni.yc;
     const c_bot_ni = props_ni.yc;
-    const sig_top_ni = (props_ni.Ix > 0 ? M_ni * c_top_ni / props_ni.Ix : 0) + sigma_N_ni;
-    const sig_bot_ni = (props_ni.Ix > 0 ? -M_ni * c_bot_ni / props_ni.Ix : 0) + sigma_N_ni;
+    const sig_top_ni = (props_ni.Ix > 0 ? -M_ni * c_top_ni / props_ni.Ix : 0) + sigma_N_ni;
+    const sig_bot_ni = (props_ni.Ix > 0 ?  M_ni * c_bot_ni / props_ni.Ix : 0) + sigma_N_ni;
     const localMax = Math.max(Math.abs(sig_top_ni), Math.abs(sig_bot_ni));
     if (localMax > sigmaMax) sigmaMax = localMax;
     // Store signed stress of the critical (highest |σ|) fiber
@@ -3646,8 +3646,8 @@ function drawFlexSection(xPos) {
   // Flexión compuesta: σ = N/A + M·(y−ȳ)/I  — N from axial FEM solver
   const N_SI    = fGetN_at(xPos);
   const sigma_N = props.A > 0 ? N_SI / props.A : 0;
-  const sig_top_SI = (props.Ix > 0 ?  M_at_x * c_top / props.Ix : 0) + sigma_N;
-  const sig_bot_SI = (props.Ix > 0 ? -M_at_x * c_bot / props.Ix : 0) + sigma_N;
+  const sig_top_SI = (props.Ix > 0 ? -M_at_x * c_top / props.Ix : 0) + sigma_N;
+  const sig_bot_SI = (props.Ix > 0 ?  M_at_x * c_bot / props.Ix : 0) + sigma_N;
   const sig_max_abs = Math.max(Math.abs(sig_top_SI), Math.abs(sig_bot_SI), 1e-12);
 
   // σ axis is centred in zone 1; diagram extends ± sigRange on each side
