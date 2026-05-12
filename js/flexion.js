@@ -2487,7 +2487,8 @@ function fSolve() {
       }
       fixedAxSet.forEach(ni => {
         let r = 0;
-        for (let j = 0; j <= nEl; j++) r += K_ax[ni][j] * u_axial[j];
+        const jMin = Math.max(0, ni - bwAx), jMax = Math.min(nEl, ni + bwAx);
+        for (let j = jMin; j <= jMax; j++) r += KB_ax[ni][1 + j - ni] * u_axial[j];
         axialReactions[ni] = r - F_ax[ni];
       });
     }
