@@ -424,6 +424,15 @@
       <div class="beam-head">
         <p class="beam-title"><span class="dot" style="background:var(--orange)"></span>Sección transversal &amp; diagramas σ(y) · τ(y)</p>
         <span id="fSecBadge" style="font-family:var(--mono);font-size:11px;color:var(--txt2);background:var(--bg3);border:1px solid var(--brd2);border-radius:6px;padding:3px 9px">—</span>
+        <span style="display:flex;align-items:center;gap:5px;margin-left:8px">
+          <label style="font-family:var(--mono);font-size:11px;color:var(--txt3)">x =</label>
+          <input id="fSecXInput" type="number" min="0" step="any"
+            style="width:80px;font-family:var(--mono);font-size:11px;background:var(--bg3);border:1px solid var(--brd2);border-radius:5px;padding:3px 7px;color:var(--txt2);outline:none"
+            placeholder="0.000"
+            oninput="fSecGoToX(this.value)"
+            onkeydown="if(event.key==='Enter')fSecGoToX(this.value)">
+          <label style="font-family:var(--mono);font-size:11px;color:var(--txt3)">m</label>
+        </span>
       </div>
       <canvas id="cvFlexSec" style="cursor:crosshair"></canvas>
       <p style="font-family:var(--mono);font-size:9px;color:var(--txt3);margin-top:6px;opacity:.6;text-align:center">Sección en el punto seleccionado · haz click en cualquier gráfico · arrastra para ver σ y τ en cada fibra</p>

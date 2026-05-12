@@ -3380,10 +3380,20 @@ function drawBeamDiagram() {
 }
 
 // ── CROSS-SECTION VIEWER (below cortante, torsion-style) ──────
+function fSecGoToX(val) {
+  if (!fLastSolveData) return;
+  const x = parseFloat(val);
+  const L = fLastSolveData.L;
+  if (isNaN(x)) return;
+  const xClamped = Math.max(0, Math.min(L, x));
+  drawFlexSection(xClamped);
+}
+
 function drawFlexSection(xPos) {
   const cvs   = document.getElementById('cvFlexSec');
   const info  = document.getElementById('fSecInfo');
   const badge = document.getElementById('fSecBadge');
+  const xinput = document.getElementById('fSecXInput');
   if (!cvs || !info) return;
 
   const dpr = window.devicePixelRatio || 1;
@@ -3417,6 +3427,7 @@ function drawFlexSection(xPos) {
   const seg   = fSegs.find(s=>xPos>=s.xa-1e-9&&xPos<=s.xb+1e-9) || fSegs[fSegs.length-1];
   const props = fSecProps(seg);
   badge.textContent = 'x = ' + xPos.toFixed(4) + ' m · seg. ' + (fSegs.indexOf(seg)+1);
+  if (xinput && document.activeElement !== xinput) xinput.value = xPos.toFixed(4);
 
   // Section geometry
   let H_tot, B_tot;
