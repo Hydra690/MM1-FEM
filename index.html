@@ -314,6 +314,7 @@
       <button id="fRedoBtn" class="btn btn-g" style="flex:1;font-size:10px;padding:5px 0" onclick="fRedo()" disabled title="Rehacer (Ctrl+Y)">&#x21AA; Rehacer</button>
       <button class="btn btn-g" style="padding:5px 9px;font-size:13px" onclick="fSaveProject()" title="Guardar proyecto como JSON">&#x1F4BE;</button>
       <button class="btn btn-g" style="padding:5px 9px;font-size:13px" onclick="document.getElementById('fLoadInput').click()" title="Cargar proyecto desde JSON">&#x1F4C2;</button>
+      <button id="fShareBtn" class="btn btn-g" style="padding:5px 9px;font-size:11px;letter-spacing:-.01em" onclick="fShareLink()" title="Copiar enlace compartible">🔗</button>
       <input id="fLoadInput" type="file" accept=".json" style="display:none" onchange="fLoadProject(this.files[0]);this.value=''">
     </div>
     <div id="fOverlapWarn" style="display:none;margin-bottom:6px;padding:7px 10px;background:rgba(240,112,112,0.10);border:1px solid rgba(240,112,112,0.40);border-radius:6px;font-size:10px;color:#f07070;line-height:1.45"></div>

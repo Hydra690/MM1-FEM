@@ -4053,7 +4053,11 @@ function fInit() {
   fSupports.push({ id: ++fSpId, x: fGetL(), restrictV: true, restrictU: false, restrictTheta: false, kV: null, kTheta: null, deltaV: 0, deltaTheta: 0 });
   fRenderSupports();
   fUpdateUndoUI();
-  setTimeout(() => { fDrawSegBar(); drawBeamDiagram(); }, 80);
+  setTimeout(() => {
+    fDrawSegBar(); drawBeamDiagram();
+    // Load from share link if present in URL
+    fLoadFromHash();
+  }, 80);
 }
 
 // ── GUARDAR / CARGAR PROYECTO ─────────────────────────────────
@@ -4080,41 +4084,77 @@ function fLoadProject(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
-    try {
-      const data = JSON.parse(e.target.result);
-      fPushUndo();
-      fSegs.length = 0;     (data.segs     || []).forEach(sg => fSegs.push(sg));
-      fLoads.length = 0;    (data.loads    || []).forEach(l  => fLoads.push(l));
-      fSupports.length = 0; (data.supports || []).forEach(sp => fSupports.push(sp));
-      fSid  = data.sid  || fSegs.reduce((m,s) => Math.max(m,s.id||0), 0);
-      fLid  = data.lid  || fLoads.reduce((m,l) => Math.max(m,l.id||0), 0);
-      fSpId = data.spid || fSupports.reduce((m,s) => Math.max(m,s.id||0), 0);
-      const nEl = document.getElementById('fN');
-      if (nEl && data.n) nEl.value = data.n;
-      const u = data.units || {};
-      if (u.fUnitLen)    fUnitLen    = u.fUnitLen;
-      if (u.fUnitE)      fUnitE      = u.fUnitE;
-      if (u.fUnitSpan)   fUnitSpan   = u.fUnitSpan;
-      if (u.fUnitForce)  fUnitForce  = u.fUnitForce;
-      if (u.fUnitDefl)   fUnitDefl   = u.fUnitDefl;
-      if (u.fUnitStress) fUnitStress = u.fUnitStress;
-      if (u.fUnitDeltaV) fUnitDeltaV = u.fUnitDeltaV;
-      if (u.fUnitDeltaR) fUnitDeltaR = u.fUnitDeltaR;
-      // Clear stale results so old charts never linger after a new import
-      fLastSolveData = null;
-      Object.keys(fCharts).forEach(k => { if (fCharts[k]) { fCharts[k].destroy(); fCharts[k] = null; } });
-      document.getElementById('flexResContent').style.display = 'none';
-      document.getElementById('fEmptyState').style.display = '';
-      fRenderUnitPanel(); fRenderSegs(); fRenderLoads(); fRenderSupports();
-      fUpdateUndoUI();
-      // Let the DOM settle, then draw diagram + auto-solve (via fSolveUI for proper error handling)
-      setTimeout(() => { fDrawSegBar(); drawBeamDiagram(); fSolveUI(); }, 150);
-    } catch(err) {
+    try { fApplyProjectData(JSON.parse(e.target.result)); }
+    catch(err) {
       const box = document.getElementById('fErrBox');
-      if (box) { box.textContent = 'Error al cargar: ' + err.message; box.style.display='block'; }
+      if (box) { box.textContent = 'Error al cargar: ' + err.message; box.style.display = 'block'; }
     }
   };
   reader.readAsText(file);
+}
+
+// ── COMPARTIR POR ENLACE ──────────────────────────────────────
+function fGetProjectData() {
+  const nEl = document.getElementById('fN');
+  return {
+    version: '3.5',
+    segs: JSON.parse(JSON.stringify(fSegs)),
+    loads: JSON.parse(JSON.stringify(fLoads)),
+    supports: JSON.parse(JSON.stringify(fSupports)),
+    sid: fSid, lid: fLid, spid: fSpId,
+    n: nEl ? nEl.value : '40',
+    units: { fUnitLen, fUnitE, fUnitSpan, fUnitForce, fUnitDefl, fUnitStress, fUnitDeltaV, fUnitDeltaR }
+  };
+}
+
+function fApplyProjectData(data) {
+  fPushUndo();
+  fSegs.length = 0;     (data.segs     || []).forEach(sg => fSegs.push(sg));
+  fLoads.length = 0;    (data.loads    || []).forEach(l  => fLoads.push(l));
+  fSupports.length = 0; (data.supports || []).forEach(sp => fSupports.push(sp));
+  fSid  = data.sid  || fSegs.reduce((m,s) => Math.max(m,s.id||0), 0);
+  fLid  = data.lid  || fLoads.reduce((m,l) => Math.max(m,l.id||0), 0);
+  fSpId = data.spid || fSupports.reduce((m,s) => Math.max(m,s.id||0), 0);
+  const nEl = document.getElementById('fN');
+  if (nEl && data.n) nEl.value = data.n;
+  const u = data.units || {};
+  if (u.fUnitLen)    fUnitLen    = u.fUnitLen;
+  if (u.fUnitE)      fUnitE      = u.fUnitE;
+  if (u.fUnitSpan)   fUnitSpan   = u.fUnitSpan;
+  if (u.fUnitForce)  fUnitForce  = u.fUnitForce;
+  if (u.fUnitDefl)   fUnitDefl   = u.fUnitDefl;
+  if (u.fUnitStress) fUnitStress = u.fUnitStress;
+  if (u.fUnitDeltaV) fUnitDeltaV = u.fUnitDeltaV;
+  if (u.fUnitDeltaR) fUnitDeltaR = u.fUnitDeltaR;
+  fLastSolveData = null;
+  Object.keys(fCharts).forEach(k => { if (fCharts[k]) { fCharts[k].destroy(); fCharts[k] = null; } });
+  fRenderUnitPanel(); fRenderSegs(); fRenderLoads(); fRenderSupports();
+  fUpdateUndoUI();
+  setTimeout(() => { fDrawSegBar(); drawBeamDiagram(); fSolveUI(); }, 150);
+}
+
+function fShareLink() {
+  try {
+    const json = JSON.stringify(fGetProjectData());
+    const encoded = btoa(unescape(encodeURIComponent(json)));
+    const url = location.origin + location.pathname + '#fstate=' + encoded;
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('fShareBtn');
+      if (btn) { const orig = btn.textContent; btn.textContent = '✓ Copiado'; setTimeout(() => { btn.textContent = orig; }, 2000); }
+    });
+  } catch(e) { alert('No se pudo copiar el enlace: ' + e.message); }
+}
+
+function fLoadFromHash() {
+  const hash = location.hash;
+  if (!hash.startsWith('#fstate=')) return;
+  try {
+    const json = decodeURIComponent(escape(atob(hash.slice(8))));
+    const data = JSON.parse(json);
+    fApplyProjectData(data);
+  } catch(e) {
+    console.warn('Error al cargar desde enlace:', e.message);
+  }
 }
 
 // ── EXPORTAR RESULTADOS (PNG) ─────────────────────────────────
