@@ -2020,12 +2020,12 @@ function fSolveUI() {
   if (btn)  btn.disabled = true;
   if (spin) spin.style.display = '';
   // Yield to the browser so the spinner renders before the computation starts
-  requestAnimationFrame(() => requestAnimationFrame(() => {
+  requestAnimationFrame(() => {
     try { fSolve(); } finally {
       if (btn)  btn.disabled = false;
       if (spin) spin.style.display = 'none';
     }
-  }));
+  });
 }
 
 function fSolve() {
@@ -4081,7 +4081,8 @@ function fLoadProject(file) {
       if (u.fUnitDeltaR) fUnitDeltaR = u.fUnitDeltaR;
       fRenderUnitPanel(); fRenderSegs(); fRenderLoads(); fRenderSupports();
       fUpdateUndoUI();
-      setTimeout(() => { fDrawSegBar(); drawBeamDiagram(); }, 80);
+      // Let the DOM settle (seg previews use setTimeout 0 internally), then draw + solve
+      setTimeout(() => { fDrawSegBar(); drawBeamDiagram(); fSolve(); }, 120);
     } catch(err) {
       const box = document.getElementById('fErrBox');
       if (box) { box.textContent = 'Error al cargar: ' + err.message; box.style.display='block'; }
