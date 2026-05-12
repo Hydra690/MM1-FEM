@@ -3899,7 +3899,7 @@ function fAttachSecHover() {
 
     const { props, M_at_x, V_at_x, scan, scanI, yRef_c, sigma_N } = st;
     const y_from_centroid = yf - props.yc;
-    const sigma_SI = (props.Ix > 0 ? M_at_x * y_from_centroid / props.Ix : 0) + (sigma_N || 0);
+    const sigma_SI = (props.Ix > 0 ? -M_at_x * y_from_centroid / props.Ix : 0) + (sigma_N || 0);
     const sigma_u  = fStressFromSI(sigma_SI);
 
     // τ at yf: find closest scan point
