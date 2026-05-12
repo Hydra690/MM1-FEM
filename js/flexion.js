@@ -4079,10 +4079,15 @@ function fLoadProject(file) {
       if (u.fUnitStress) fUnitStress = u.fUnitStress;
       if (u.fUnitDeltaV) fUnitDeltaV = u.fUnitDeltaV;
       if (u.fUnitDeltaR) fUnitDeltaR = u.fUnitDeltaR;
+      // Clear stale results so old charts never linger after a new import
+      fLastSolveData = null;
+      Object.keys(fCharts).forEach(k => { if (fCharts[k]) { fCharts[k].destroy(); fCharts[k] = null; } });
+      document.getElementById('flexResContent').style.display = 'none';
+      document.getElementById('fEmptyState').style.display = '';
       fRenderUnitPanel(); fRenderSegs(); fRenderLoads(); fRenderSupports();
       fUpdateUndoUI();
-      // Let the DOM settle (seg previews use setTimeout 0 internally), then draw + solve
-      setTimeout(() => { fDrawSegBar(); drawBeamDiagram(); fSolve(); }, 120);
+      // Let the DOM settle, then draw diagram + auto-solve (via fSolveUI for proper error handling)
+      setTimeout(() => { fDrawSegBar(); drawBeamDiagram(); fSolveUI(); }, 150);
     } catch(err) {
       const box = document.getElementById('fErrBox');
       if (box) { box.textContent = 'Error al cargar: ' + err.message; box.style.display='block'; }
