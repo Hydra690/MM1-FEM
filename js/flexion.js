@@ -963,6 +963,24 @@ function fCompositeMaxStress(s, M_val) {
   return sigmaMax;
 }
 
+// Returns n = E_layer/E_ref for the composite layer that contains y_global.
+// If not composite (or no layers), returns 1.
+function fNatY(seg, y_global) {
+  if (seg.secType !== 'composite') return 1;
+  const layers = seg.layers || [];
+  if (!layers.length) return 1;
+  const E_ref = layers[0].E || 1;
+  let bestN = (layers[0].E || 1) / E_ref, bestDist = Infinity;
+  layers.forEach(lay => {
+    const dims = fLayerDims(lay);
+    const y_b = (lay.y_center || 0) - dims.h / 2;
+    const y_t = (lay.y_center || 0) + dims.h / 2;
+    const dist = y_global < y_b ? y_b - y_global : y_global > y_t ? y_global - y_t : 0;
+    if (dist < bestDist) { bestDist = dist; bestN = (lay.E || 1) / E_ref; }
+  });
+  return bestN;
+}
+
 // ── SECTION PROPERTIES ────────────────────────────────────────
 // Returns { Ix, Iy, A, yc } all in SI (m⁴, m²,  m)
 // yc = distance from BOTTOM fiber to centroid (for c = max(yc, h-yc))
@@ -2561,7 +2579,6 @@ function fSolve() {
     const e_ni = Math.min(Math.max(Math.floor(xm / le), 0), nEl - 1);
     const N_ni = N_elem_arr[e_ni] || 0;
     const props_ni = fSecProps(s);
-    const sigma_N_ni = props_ni.A > 0 ? N_ni / props_ni.A : 0;
     let H_total_ni;
     if      (s.secType==='circ')                       H_total_ni = s.d||0.05;
     else if (s.secType==='rect')                       H_total_ni = s.h||0.10;
@@ -2571,8 +2588,27 @@ function fSolve() {
     else                                               H_total_ni = s.h||0.10;
     const c_top_ni = H_total_ni - props_ni.yc;
     const c_bot_ni = props_ni.yc;
-    const sig_top_ni = (props_ni.Ix > 0 ? -M_ni * c_top_ni / props_ni.Ix : 0) + sigma_N_ni;
-    const sig_bot_ni = (props_ni.Ix > 0 ?  M_ni * c_bot_ni / props_ni.Ix : 0) + sigma_N_ni;
+    let sig_top_ni, sig_bot_ni;
+    if (s.secType === 'composite' && props_ni.layers_contribution && props_ni.layers_contribution.length) {
+      // Real σ = n_i·(σ_N_tr − M·(y−ȳ)/I_tr); scan all layer faces for maximum
+      const I_tr = props_ni.Ix, yc_g = props_ni.yc_global;
+      const sigma_N_tr = props_ni.A > 0 ? N_ni / props_ni.A : 0;
+      const layers = s.layers || [];
+      let bestAbs = 0, bestSig = 0;
+      props_ni.layers_contribution.forEach(({ n }, li) => {
+        const lay = layers[li]; if (!lay) return;
+        const dims = fLayerDims(lay), yc_l = lay.y_center || 0;
+        [yc_l - dims.h/2, yc_l + dims.h/2].forEach(y => {
+          const sig = I_tr > 0 ? n*(sigma_N_tr - M_ni*(y - yc_g)/I_tr) : n*sigma_N_tr;
+          if (Math.abs(sig) > bestAbs) { bestAbs = Math.abs(sig); bestSig = sig; }
+        });
+      });
+      sig_top_ni = bestSig; sig_bot_ni = 0;
+    } else {
+      const sigma_N_ni = props_ni.A > 0 ? N_ni / props_ni.A : 0;
+      sig_top_ni = (props_ni.Ix > 0 ? -M_ni * c_top_ni / props_ni.Ix : 0) + sigma_N_ni;
+      sig_bot_ni = (props_ni.Ix > 0 ?  M_ni * c_bot_ni / props_ni.Ix : 0) + sigma_N_ni;
+    }
     const localMax = Math.max(Math.abs(sig_top_ni), Math.abs(sig_bot_ni));
     if (localMax > sigmaMax) sigmaMax = localMax;
     // Store signed stress of the critical (highest |σ|) fiber
@@ -3703,12 +3739,32 @@ function drawFlexSection(xPos) {
   const c_top = H_tot - props.yc;
   const c_bot = props.yc;
   const c_max = Math.max(c_top, c_bot);
-  // Flexión compuesta: σ = N/A + M·(y−ȳ)/I  — N from axial FEM solver
   const N_SI    = fGetN_at(xPos);
-  const sigma_N = props.A > 0 ? N_SI / props.A : 0;
-  const sig_top_SI = (props.Ix > 0 ? -M_at_x * c_top / props.Ix : 0) + sigma_N;
-  const sig_bot_SI = (props.Ix > 0 ?  M_at_x * c_bot / props.Ix : 0) + sigma_N;
-  const sig_max_abs = Math.max(Math.abs(sig_top_SI), Math.abs(sig_bot_SI), 1e-12);
+  const sigma_N = props.A > 0 ? N_SI / props.A : 0;  // σ_N_tr for composite; σ_N actual for simple
+  let sig_top_SI, sig_bot_SI, sig_max_abs;
+  let _cmpLayers = null;  // sorted layer data for piecewise diagram (composite only)
+  if (isComposite && props.layers_contribution && props.layers_contribution.length) {
+    const I_tr = props.Ix, yc_g = props.yc_global, sigma_N_tr = sigma_N;
+    _cmpLayers = props.layers_contribution.map((lc, li) => {
+      const lay = seg.layers[li];
+      const dims = fLayerDims(lay);
+      return { n: lc.n, y_b: (lay.y_center||0) - dims.h/2, y_t: (lay.y_center||0) + dims.h/2 };
+    }).sort((a, b) => a.y_b - b.y_b);
+    const bL = _cmpLayers[0], tL = _cmpLayers[_cmpLayers.length - 1];
+    sig_bot_SI = I_tr > 0 ? bL.n*(sigma_N_tr - M_at_x*(bL.y_b - yc_g)/I_tr) : bL.n*sigma_N_tr;
+    sig_top_SI = I_tr > 0 ? tL.n*(sigma_N_tr - M_at_x*(tL.y_t - yc_g)/I_tr) : tL.n*sigma_N_tr;
+    sig_max_abs = 1e-12;
+    _cmpLayers.forEach(({ n, y_b, y_t }) => {
+      [y_b, y_t].forEach(y => {
+        const s = I_tr > 0 ? n*(sigma_N_tr - M_at_x*(y - yc_g)/I_tr) : n*sigma_N_tr;
+        sig_max_abs = Math.max(sig_max_abs, Math.abs(s));
+      });
+    });
+  } else {
+    sig_top_SI = (props.Ix > 0 ? -M_at_x * c_top / props.Ix : 0) + sigma_N;
+    sig_bot_SI = (props.Ix > 0 ?  M_at_x * c_bot / props.Ix : 0) + sigma_N;
+    sig_max_abs = Math.max(Math.abs(sig_top_SI), Math.abs(sig_bot_SI), 1e-12);
+  }
 
   // σ axis is centred in zone 1; diagram extends ± sigRange on each side
   const sigAxisX = zW + zW / 2;          // centre of zone 1
@@ -3738,46 +3794,60 @@ function drawFlexSection(xPos) {
   const sig_top_px = sigAxisX + (sig_top_SI/sig_max_abs)*sigRange;
   const sig_bot_px = sigAxisX + (sig_bot_SI/sig_max_abs)*sigRange;
 
-  if (sig_top_SI * sig_bot_SI < 0) {
-    // Neutral axis inside section — split into two colored triangles
-    const t = -sig_bot_SI / (sig_top_SI - sig_bot_SI);  // fraction from bottom (0→1)
-    const na_y = yBot + (yTop_px - yBot) * t;            // canvas y of neutral axis
+  if (_cmpLayers) {
+    // Composite: piecewise trapezoidal σ diagram, one trapezoid per layer
+    const I_tr = props.Ix, yc_g = props.yc_global, sigma_N_tr = sigma_N;
+    _cmpLayers.forEach(({ n, y_b, y_t }) => {
+      const sig_b = I_tr > 0 ? n*(sigma_N_tr - M_at_x*(y_b - yc_g)/I_tr) : n*sigma_N_tr;
+      const sig_t = I_tr > 0 ? n*(sigma_N_tr - M_at_x*(y_t - yc_g)/I_tr) : n*sigma_N_tr;
+      const cy_b = yBot - (y_b - yRef_c) * sc;
+      const cy_t = yBot - (y_t - yRef_c) * sc;
+      const cx_b = sigAxisX + (sig_b/sig_max_abs)*sigRange;
+      const cx_t = sigAxisX + (sig_t/sig_max_abs)*sigRange;
+      const avgSig = (sig_b + sig_t) / 2;
+      ctx.beginPath();
+      ctx.moveTo(sigAxisX, cy_b); ctx.lineTo(cx_b, cy_b);
+      ctx.lineTo(cx_t, cy_t); ctx.lineTo(sigAxisX, cy_t);
+      ctx.closePath();
+      ctx.fillStyle = avgSig >= 0 ? 'rgba(240,100,100,0.18)' : 'rgba(96,184,245,0.18)';
+      ctx.fill();
+      ctx.strokeStyle = avgSig >= 0 ? '#f07070dd' : '#60b8f5dd';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx_b, cy_b); ctx.lineTo(cx_t, cy_t); ctx.stroke();
+      if (sig_b * sig_t < 0) {  // zero crossing inside this layer
+        const t_frac = -sig_b / (sig_t - sig_b);
+        const cy_0 = cy_b + (cy_t - cy_b) * t_frac;
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+        ctx.beginPath(); ctx.moveTo(sigAxisX-sigRange-4, cy_0); ctx.lineTo(sigAxisX+sigRange+4, cy_0); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    });
+  } else if (sig_top_SI * sig_bot_SI < 0) {
+    // Non-composite, sign changes — split into two colored triangles
+    const t = -sig_bot_SI / (sig_top_SI - sig_bot_SI);
+    const na_y = yBot + (yTop_px - yBot) * t;
     const upperIsPos = sig_top_SI > 0;
-    // Upper triangle
     ctx.beginPath();
-    ctx.moveTo(sigAxisX, yTop_px);
-    ctx.lineTo(sig_top_px, yTop_px);
-    ctx.lineTo(sigAxisX, na_y);
+    ctx.moveTo(sigAxisX, yTop_px); ctx.lineTo(sig_top_px, yTop_px); ctx.lineTo(sigAxisX, na_y);
     ctx.closePath();
-    ctx.fillStyle = upperIsPos ? 'rgba(240,100,100,0.18)' : 'rgba(96,184,245,0.18)';
-    ctx.fill();
-    // Lower triangle
+    ctx.fillStyle = upperIsPos ? 'rgba(240,100,100,0.18)' : 'rgba(96,184,245,0.18)'; ctx.fill();
     ctx.beginPath();
-    ctx.moveTo(sigAxisX, na_y);
-    ctx.lineTo(sig_bot_px, yBot);
-    ctx.lineTo(sigAxisX, yBot);
+    ctx.moveTo(sigAxisX, na_y); ctx.lineTo(sig_bot_px, yBot); ctx.lineTo(sigAxisX, yBot);
     ctx.closePath();
-    ctx.fillStyle = upperIsPos ? 'rgba(96,184,245,0.18)' : 'rgba(240,100,100,0.18)';
-    ctx.fill();
-    // Neutral axis dashed line
+    ctx.fillStyle = upperIsPos ? 'rgba(96,184,245,0.18)' : 'rgba(240,100,100,0.18)'; ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
     ctx.beginPath(); ctx.moveTo(sigAxisX - sigRange - 4, na_y); ctx.lineTo(sigAxisX + sigRange + 4, na_y); ctx.stroke();
     ctx.setLineDash([]);
-    // Stress diagonal
     ctx.strokeStyle = upperIsPos ? '#f07070dd' : '#60b8f5dd'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(sig_top_px, yTop_px); ctx.lineTo(sig_bot_px, yBot); ctx.stroke();
   } else {
     ctx.beginPath();
-    ctx.moveTo(sigAxisX, yTop_px);
-    ctx.lineTo(sig_top_px, yTop_px);
-    ctx.lineTo(sig_bot_px, yBot);
-    ctx.lineTo(sigAxisX, yBot);
+    ctx.moveTo(sigAxisX, yTop_px); ctx.lineTo(sig_top_px, yTop_px);
+    ctx.lineTo(sig_bot_px, yBot); ctx.lineTo(sigAxisX, yBot);
     ctx.closePath();
     const isPos = sig_top_SI >= 0;
-    ctx.fillStyle = isPos ? 'rgba(240,100,100,0.18)' : 'rgba(96,184,245,0.18)';
-    ctx.fill();
-    ctx.strokeStyle = isPos ? '#f07070dd' : '#60b8f5dd';
-    ctx.lineWidth = 1.5;
+    ctx.fillStyle = isPos ? 'rgba(240,100,100,0.18)' : 'rgba(96,184,245,0.18)'; ctx.fill();
+    ctx.strokeStyle = isPos ? '#f07070dd' : '#60b8f5dd'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(sig_top_px, yTop_px); ctx.lineTo(sig_bot_px, yBot); ctx.stroke();
   }
 
@@ -3930,9 +4000,10 @@ function fAttachSecHover() {
     const yf = getYfromEvent(e);
     if (yf === null) { removeHoverTip(); return; }
 
-    const { props, M_at_x, V_at_x, scan, scanI, yRef_c, sigma_N } = st;
+    const { props, seg, M_at_x, V_at_x, scan, scanI, yRef_c, sigma_N } = st;
     const y_from_centroid = yf - props.yc;
-    const sigma_SI = (props.Ix > 0 ? -M_at_x * y_from_centroid / props.Ix : 0) + (sigma_N || 0);
+    const n_hover = fNatY(seg, yRef_c + yf);
+    const sigma_SI = n_hover * ((props.Ix > 0 ? -M_at_x * y_from_centroid / props.Ix : 0) + (sigma_N || 0));
     const sigma_u  = fStressFromSI(sigma_SI);
 
     // τ at yf: find closest scan point
