@@ -2034,8 +2034,12 @@ function fSolveUI() {
   if (spin) spin.style.display = '';
   // Yield to the browser so the spinner renders before the computation starts
   requestAnimationFrame(() => {
-    try { fSolve(); } finally {
-      _fSecCache = null;    // ensure cache is released even if fSolve returned early
+    try {
+      fSolve();
+    } catch(err) {
+      fShowErr('Error interno: ' + (err.message || err));
+    } finally {
+      _fSecCache = null;
       if (btn)  btn.disabled = false;
       if (spin) spin.style.display = 'none';
     }
