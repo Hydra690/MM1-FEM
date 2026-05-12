@@ -1146,8 +1146,14 @@ function _fSecPropsCompute(s) {
 
 function fGetI(s) { return fSecProps(s).Ix; }
 
-function fGetEI2(s) { return s.E * fSecProps(s).Ix; }  // s.E is in Pa
-
+// For composite sections EI = E_ref × I_tr (E_ref = layers[0].E, I_tr = fSecProps().Ix).
+// s.E is the segment-level E used for simple sections; for composite it may differ from E_ref.
+function fERef(s) {
+  return (s.secType === 'composite' && s.layers && s.layers[0])
+    ? (s.layers[0].E || s.E || 1)
+    : (s.E || 1);
+}
+function fGetEI2(s) { return fERef(s) * fSecProps(s).Ix; }
 
 function fGetEI_at(x) {
   const s = fSegs.find(s => x >= s.xa - 1e-9 && x <= s.xb + 1e-9) || fSegs[fSegs.length-1];
@@ -1156,7 +1162,7 @@ function fGetEI_at(x) {
 
 function fGetEA_at(x) {
   const s = fSegs.find(s => x >= s.xa - 1e-9 && x <= s.xb + 1e-9) || fSegs[fSegs.length-1];
-  return s.E * fSecProps(s).A;
+  return fERef(s) * fSecProps(s).A;
 }
 
 // Returns axial force N (SI, N) at position x from last solve
@@ -2180,17 +2186,26 @@ function fSolve() {
     F[d[0]]+=f0; F[d[1]]+=f1; F[d[2]]+=f2; F[d[3]]+=f3;
   }
 
-  // Point loads and moments
+  // Point loads — consistent nodal forces via Hermite shape functions.
+  // For P at local t∈[0,1] within element e:
+  //   F[v_i]  += P·(1-3t²+2t³),  F[θ_i] += P·le·t·(1-t)²
+  //   F[v_j]  += P·(3t²-2t³),    F[θ_j] += P·le·t²·(t-1)
+  // Moments are applied directly to the rotation DOF of the nearest node.
   fLoads.forEach(l => {
     if (l.tipo==='pun') {
-      const xi = Math.max(0,Math.min(L,+l.x||0));
-      const idx = Math.min(Math.round(xi/le), nEl);
-      F[2*idx] += (+l.val||0);  // already SI (N)
+      const xi = Math.max(0, Math.min(L, +l.x || 0));
+      const P  = +l.val || 0;
+      const e  = Math.min(Math.floor(xi / le), nEl - 1);
+      const t  = (xi - e * le) / le;                       // local [0,1]
+      F[2*e]       += P * (1 - 3*t**2 + 2*t**3);
+      F[2*e+1]     += P * le * t * (1-t)**2;
+      F[2*(e+1)]   += P * (3*t**2 - 2*t**3);
+      F[2*(e+1)+1] += P * le * t**2 * (t-1);
     }
     if (l.tipo==='mom') {
-      const xi = Math.max(0,Math.min(L,+l.x||0));
-      const idx = Math.min(Math.round(xi/le), nEl);
-      F[2*idx+1] += (+l.val||0);  // already SI (N·m)
+      const xi = Math.max(0, Math.min(L, +l.x || 0));
+      const idx = Math.min(Math.round(xi / le), nEl);
+      F[2*idx+1] += (+l.val || 0);                         // already SI (N·m)
     }
   });
 
@@ -3943,7 +3958,7 @@ function drawFlexSection(xPos) {
   const Ix_cm4 = (props.Ix*1e8).toFixed(3), Iy_cm4 = (props.Iy*1e8).toFixed(3);
   const A_cm2  = (props.A*1e4).toFixed(3),  yc_cm  = (props.yc*100).toFixed(3);
   const c_cm   = (c_max*100).toFixed(3);
-  const EI_SI  = seg.E * props.Ix;  // seg.E in Pa
+  const EI_SI  = fERef(seg) * props.Ix;
   const EI_str = EI_SI > 1e6 ? (EI_SI/1e6).toFixed(3)+' MN·m²' : EI_SI.toExponential(3)+' N·m²';
   const M_u    = fMomentFromSI(M_at_x);
   const V_u    = fForceFromSI(V_at_x);
