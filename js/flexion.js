@@ -28,6 +28,7 @@ const fSelectedPoints = {};
 let fLastClickedChart = null;
 let fLastSolveData = null;
 let fLastSecData   = null;  // stores geometry for hover interaction on σ(y)
+let _fSecCache     = null;  // per-solve cache for fSecProps (keyed by segment id)
 let fRasYcut     = null;   // y from bottom of section (m); null = not set
 let fRasSpacing  = 0;      // connector spacing (m)
 const fSupports = [];
@@ -976,6 +977,18 @@ function fCompositeMaxStress(s, M_val) {
 //   composite : layered section with method n
 
 function fSecProps(s) {
+  // Cache per-solve to avoid recomputing fCompositeShearScan (301 iters) for every element
+  if (_fSecCache) {
+    const cached = _fSecCache.get(s.id);
+    if (cached) return cached;
+    const result = _fSecPropsCompute(s);
+    _fSecCache.set(s.id, result);
+    return result;
+  }
+  return _fSecPropsCompute(s);
+}
+
+function _fSecPropsCompute(s) {
   const type = s.secType || 'rect';
 
   if (type === 'circ') {
@@ -2022,6 +2035,7 @@ function fSolveUI() {
   // Yield to the browser so the spinner renders before the computation starts
   requestAnimationFrame(() => {
     try { fSolve(); } finally {
+      _fSecCache = null;    // ensure cache is released even if fSolve returned early
       if (btn)  btn.disabled = false;
       if (spin) spin.style.display = 'none';
     }
@@ -2030,6 +2044,7 @@ function fSolveUI() {
 
 function fSolve() {
   fShowErr('');
+  _fSecCache = new Map();   // activate per-solve cache; cleared after solve
   const L = fGetL(), nps = fGetN();
 
   if (!L||L<=0)          { fShowErr('Longitud inválida.'); return; }
@@ -2705,6 +2720,8 @@ function fSolve() {
     <div class="ir"><span class="ik">x(M máx)</span><span class="iv">${(MMaxIdxN*le).toFixed(4)} m</span></div>
     <div class="ir"><span class="ik">M máx</span><span class="iv" style="color:var(--acc)">${MMaxDisp.toFixed(3)} ${fMomentLabel()}</span></div>
     <div class="ir"><span class="ik">σ_f máx</span><span class="iv" style="color:var(--orange)">${disp_sigMax.toFixed(3)} ${fStressLabel()}</span></div>`;
+
+  _fSecCache = null;   // release solve cache so interactive features recompute freely
 
   setTimeout(() => drawBeamDiagram(), 60);
 
