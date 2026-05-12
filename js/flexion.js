@@ -2014,6 +2014,20 @@ function fElemK(EI, le) {
 }
 
 // ── FLEXION SOLVE ─────────────────────────────────────────────
+function fSolveUI() {
+  const btn = document.getElementById('fSolveBtn');
+  const spin = document.getElementById('fSolveSpinner');
+  if (btn)  btn.disabled = true;
+  if (spin) spin.style.display = '';
+  // Yield to the browser so the spinner renders before the computation starts
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    try { fSolve(); } finally {
+      if (btn)  btn.disabled = false;
+      if (spin) spin.style.display = 'none';
+    }
+  }));
+}
+
 function fSolve() {
   fShowErr('');
   const L = fGetL(), nps = fGetN();
@@ -2070,21 +2084,27 @@ function fSolve() {
   // nNodes = nEl+1; DOFs = 2 per node: [v0,θ0, v1,θ1, ..., vN,θN]
   const nDof = 2 * (nEl + 1);
 
-  // Allocate global K and F
-  const K = Array.from({length:nDof}, () => new Float64Array(nDof));
-  const F = new Float64Array(nDof);
+  // Banded stiffness matrix: Euler-Bernoulli 2 DOF/node → half-bandwidth bw=3
+  // KB[i][bw + j - i] = K[i][j] for |j-i| <= bw
+  const bw = 3, bw2 = 2 * bw;
+  const KB = Array.from({length: nDof}, () => new Float64Array(bw2 + 1));
+  const F  = new Float64Array(nDof);
   const EIe = new Float64Array(nEl);
   const qVis = new Float64Array(nEl);
 
-  // Assemble stiffness
+  // Assemble stiffness into banded storage
   for (let e=0;e<nEl;e++) {
     const xm = (e+0.5)*le;
     const EI = fGetEI_at(xm);
     EIe[e] = EI;
     const ke = fElemK(EI, le);
     const dofs = [2*e, 2*e+1, 2*(e+1), 2*(e+1)+1];
-    for (let i=0;i<4;i++) for (let j=0;j<4;j++) {
-      K[dofs[i]][dofs[j]] += ke[i][j];
+    for (let i=0;i<4;i++) {
+      const gi = dofs[i];
+      for (let j=0;j<4;j++) {
+        const off = dofs[j] - gi + bw;
+        if (off >= 0 && off <= bw2) KB[gi][off] += ke[i][j];
+      }
     }
   }
 
@@ -2193,25 +2213,26 @@ function fSolve() {
     return;
   }
 
-  // Añadir rigidez de resortes a la diagonal de K antes de ensamblar Kf
-  rawSprings.forEach(({ dof, k }) => { K[dof][dof] += k; });
+  // Añadir rigidez de resortes a la diagonal (banded diagonal = index bw)
+  rawSprings.forEach(({ dof, k }) => { KB[dof][bw] += k; });
 
-  const Kf = K.map(r=>[...r]);
-  const Ff = [...F];
-  // Aplicar BCs con desplazamiento prescrito (general: δ puede ser ≠ 0)
-  // Método eliminación: para cada DOF i prescrito a δ_i:
-  //   1. Modificar RHS: Ff[j] -= K[j][i] * δ_i  (para j libre)
-  //   2. Anular fila y columna i, poner diagonal = 1, Ff[i] = δ_i
+  // BC application on a copy of the banded matrix
+  const KBf = KB.map(r => new Float64Array(r));
+  const Ff  = new Float64Array(F);
   prescribedBCs.forEach(({ dof, val }) => {
+    const jMin = Math.max(0, dof - bw), jMax = Math.min(nDof - 1, dof + bw);
     if (Math.abs(val) > 1e-15) {
-      for (let j = 0; j < nDof; j++) Ff[j] -= Kf[j][dof] * val;
+      for (let j = jMin; j <= jMax; j++) {
+        if (j !== dof) Ff[j] -= KBf[j][bw + dof - j] * val;
+      }
     }
-    for (let j = 0; j < nDof; j++) { Kf[dof][j] = 0; Kf[j][dof] = 0; }
-    Kf[dof][dof] = 1;
+    for (let k = 0; k <= bw2; k++) KBf[dof][k] = 0;
+    for (let j = jMin; j <= jMax; j++) KBf[j][bw + dof - j] = 0;
+    KBf[dof][bw] = 1;
     Ff[dof] = val;
   });
 
-  const u_vec = luSolve(Kf, Ff);
+  const u_vec = bandedSolve(bw, KBf, Ff);
   if (!u_vec) {
     if (fixedDofs.length < 2 && rawSprings.length === 0)
       fShowErr('Estructura inestable: la viga necesita al menos 2 restricciones rígidas para eliminar los modos de cuerpo rígido (traslación y rotación).');
@@ -2315,10 +2336,12 @@ function fSolve() {
     }
   });
 
-  // Reactions: R_i = sum(K[i][j]*u[j]) - F[i]  for fixed DOFs
+  // Reactions: R_i = sum_j(K[i][j]*u[j]) - F[i] — use original banded KB
   const reactions = {};
   fixedDofs.forEach(i=>{
-    let r=0; for(let j=0;j<nDof;j++) r+=K[i][j]*u_vec[j];
+    let r = 0;
+    const jMin = Math.max(0, i - bw), jMax = Math.min(nDof - 1, i + bw);
+    for (let j = jMin; j <= jMax; j++) r += KB[i][bw + j - i] * u_vec[j];
     reactions[i] = r - F[i];
   });
   // Spring reactions: the spring opposes displacement → R = -k * u
@@ -2402,16 +2425,18 @@ function fSolve() {
   }
 
   if (hasAxialLoads || hasRestrictU) {
-    const K_ax = Array.from({length: nEl+1}, () => new Float64Array(nEl+1));
-    const F_ax = new Float64Array(nEl+1);
-    const EA_e = new Float64Array(nEl);
+    // Axial system: 1 DOF/node → tridiagonal (bw=1)
+    const bwAx = 1, bw2Ax = 2;
+    const KB_ax = Array.from({length: nEl+1}, () => new Float64Array(3));
+    const F_ax  = new Float64Array(nEl+1);
+    const EA_e  = new Float64Array(nEl);
     for (let e = 0; e < nEl; e++) {
       const xm = (e + 0.5) * le;
       const EA = fGetEA_at(xm);
       EA_e[e] = EA;
       const k = EA / le;
-      K_ax[e][e]     += k;   K_ax[e][e+1]   -= k;
-      K_ax[e+1][e]   -= k;   K_ax[e+1][e+1] += k;
+      KB_ax[e][1]   += k;  KB_ax[e][2]   -= k;
+      KB_ax[e+1][0] -= k;  KB_ax[e+1][1] += k;
     }
     fLoads.forEach(l => {
       if (l.tipo === 'axial') {
@@ -2427,14 +2452,16 @@ function fSolve() {
         fixedAxSet.add(ni);
       }
     });
-    const Kf_ax = K_ax.map(r => [...r]);
-    const Ff_ax = [...F_ax];
+    const KBf_ax = KB_ax.map(r => new Float64Array(r));
+    const Ff_ax  = new Float64Array(F_ax);
     fixedAxSet.forEach(ni => {
-      for (let j = 0; j <= nEl; j++) { Kf_ax[ni][j] = 0; Kf_ax[j][ni] = 0; }
-      Kf_ax[ni][ni] = 1;
+      const jMin = Math.max(0, ni-1), jMax = Math.min(nEl, ni+1);
+      for (let k = 0; k <= bw2Ax; k++) KBf_ax[ni][k] = 0;
+      for (let j = jMin; j <= jMax; j++) KBf_ax[j][1 + ni - j] = 0;
+      KBf_ax[ni][1] = 1;
       Ff_ax[ni] = 0;
     });
-    const u_axial = luSolve(Kf_ax, Ff_ax);
+    const u_axial = bandedSolve(bwAx, KBf_ax, Ff_ax);
     if (u_axial) {
       for (let e = 0; e < nEl; e++) {
         N_elem_arr[e] = EA_e[e] * (u_axial[e+1] - u_axial[e]) / le;

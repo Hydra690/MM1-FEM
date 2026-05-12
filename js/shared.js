@@ -492,6 +492,36 @@ function luSolve(A, b) {
   return x;
 }
 
+// Banded LU solver — O(n·bw²) vs O(n³) for dense LU.
+// Safe for symmetric positive-definite systems (no pivoting needed).
+// Storage: KB[i] is Float64Array(2*bw+1) where KB[i][bw+k] = A[i][i+k] for k in [-bw,bw].
+function bandedSolve(bw, KB, b) {
+  const n = b.length, bw2 = 2 * bw;
+  const L = KB.map(r => new Float64Array(r));
+  const x = new Float64Array(b);
+  for (let i = 0; i < n; i++) {
+    const diag = L[i][bw];
+    if (Math.abs(diag) < 1e-15) return null;
+    const iEnd = Math.min(i + bw, n - 1);
+    for (let k = i + 1; k <= iEnd; k++) {
+      const f = L[k][bw - (k - i)] / diag;
+      if (f === 0) continue;
+      const jEnd = Math.min(i + bw, n - 1);   // L[i] only stores up to i+bw
+      for (let j = i; j <= jEnd; j++) {
+        const offK = bw + j - k;
+        if (offK >= 0) L[k][offK] -= f * L[i][bw + j - i];
+      }
+      x[k] -= f * x[i];
+    }
+  }
+  for (let i = n - 1; i >= 0; i--) {
+    const iEnd = Math.min(i + bw, n - 1);
+    for (let j = i + 1; j <= iEnd; j++) x[i] -= L[i][bw + j - i] * x[j];
+    x[i] /= L[i][bw];
+  }
+  return Array.from(x);
+}
+
 function fmtVal(v, dec) {
   if (Math.abs(v) >= 1000) return v.toFixed(dec > 1 ? 1 : dec);
   if (Math.abs(v) >= 100) return v.toFixed(dec > 2 ? 2 : dec);
